@@ -11,6 +11,8 @@
  * and the backend will reject anything that slips through here. See
  * `docs/UX_RATIONALE.md` "Inline validation, not submit-time validation".
  */
+import { getDrawFee } from '@/lib/draw-credit-pricing';
+
 export type ValidationSeverity = 'info' | 'success' | 'warning' | 'danger';
 
 /**
@@ -102,6 +104,24 @@ export const getCreditReserveFloor = (limit: number, available: number) =>
 export const getWalletReserveFloor = (walletBalance: number) =>
   Math.min(walletBalance, Math.max(100, Math.round(walletBalance * 0.1)));
 
+const getMaximumDraw = (available: number): number => {
+  const availableCents = Math.max(toCents(available), 0);
+  let low = 0;
+  let high = availableCents;
+
+  while (low < high) {
+    const amountCents = Math.ceil((low + high) / 2);
+    const feeCents = toCents(getDrawFee(fromCents(amountCents)));
+    if (amountCents + feeCents <= availableCents) {
+      low = amountCents;
+    } else {
+      high = amountCents - 1;
+    }
+  }
+
+  return fromCents(low);
+};
+
 /**
  * Validate a user-entered draw amount against a credit line and produce
  * UX-friendly feedback (success, info, warning, danger).
@@ -116,13 +136,17 @@ export function getDrawAmountValidation(
 ): DrawAmountValidationResult {
   const amount = Number.parseFloat(amountInput) || 0;
   const hasEnteredAmount = amountInput.trim() !== '';
-  const remainingCredit = Math.max(creditLine.available - amount, 0);
+  const maxAmount = getMaximumDraw(creditLine.available);
+  const remainingCredit = Math.max(
+    creditLine.available - amount - getDrawFee(amount),
+    0,
+  );
   const recommendedReserve = getCreditReserveFloor(creditLine.limit, creditLine.available);
 
   let feedback: ValidationFeedback = {
     severity: 'info',
     title: 'Visible constraints',
-    message: `Draw between ${formatMoney(MIN_AMOUNT)} and ${formatMoney(creditLine.available)}. Keep some available credit in reserve for fees or urgent liquidity.`,
+    message: `Draw between ${formatMoney(MIN_AMOUNT)} and ${formatMoney(maxAmount)}. The maximum includes the 1% fee.`,
   };
 
   if (hasEnteredAmount && amount < MIN_AMOUNT) {
@@ -131,11 +155,11 @@ export function getDrawAmountValidation(
       title: 'Minimum amount required',
       message: `Enter at least ${formatMoney(MIN_AMOUNT)} to continue.`,
     };
-  } else if (hasEnteredAmount && amount > creditLine.available) {
+  } else if (hasEnteredAmount && amount > maxAmount) {
     feedback = {
       severity: 'danger',
       title: 'Exceeds available credit',
-      message: `Reduce the draw to ${formatMoney(creditLine.available)} or less.`,
+      message: `Reduce the draw to ${formatMoney(maxAmount)} or less, including the 1% fee.`,
     };
   } else if (hasEnteredAmount && remainingCredit === 0) {
     feedback = {
@@ -160,9 +184,9 @@ export function getDrawAmountValidation(
   return {
     amount,
     hasEnteredAmount,
-    isValid: hasEnteredAmount && amount >= MIN_AMOUNT && amount <= creditLine.available,
+    isValid: hasEnteredAmount && amount >= MIN_AMOUNT && amount <= maxAmount,
     minAmount: MIN_AMOUNT,
-    maxAmount: creditLine.available,
+    maxAmount,
     remainingCredit,
     recommendedReserve,
     feedback,

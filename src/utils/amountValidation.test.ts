@@ -24,6 +24,16 @@ describe('getDrawAmountValidation', () => {
     expect(result.feedback.severity).toBe('danger');
     expect(result.feedback.title).toBe('Exceeds available credit');
   });
+
+  it('reserves the 1% fee when calculating the maximum draw', () => {
+    const result = getDrawAmountValidation('35000', creditLine);
+    const maximum = getDrawAmountValidation('34653.47', creditLine);
+
+    expect(result.isValid).toBe(false);
+    expect(result.maxAmount).toBe(34653.47);
+    expect(result.feedback.message).toContain('$34,653.47');
+    expect(maximum.isValid).toBe(true);
+  });
 });
 
 describe('getRepayAmountValidation', () => {
