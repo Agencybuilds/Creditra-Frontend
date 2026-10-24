@@ -99,6 +99,8 @@ export function Dashboard() {
   const navigate = useNavigate();
   const {
     lines: creditLines,
+    status,
+    error: creditError,
     lastUpdatedAt: creditSyncedAt,
     refetch: refetchCreditLines,
   } = useCreditLines();
@@ -109,11 +111,15 @@ export function Dashboard() {
     refetch: refetchTransactions,
   } = useCreditTransactions();
 
-  const [status, setStatus] = useState<
-    "idle" | "loading" | "success" | "error"
-  >("idle");
   const [announcement, setAnnouncement] = useState<string>("");
   const [isExplainOpen, setIsExplainOpen] = useState(false);
+  const statusAnnouncement = status === "loading"
+    ? "Loading dashboard data."
+    : status === "success"
+      ? "Dashboard loaded successfully."
+      : status === "error"
+        ? `Failed to load dashboard: ${creditError?.message ?? "Unknown error"}`
+        : "";
 
   const handleCreditRefresh = useCallback(async () => {
     try {
@@ -181,50 +187,6 @@ export function Dashboard() {
     modalId: "compare-lines-drawer-dashboard",
   });
   useBodyScrollLock({ isLocked: showCompare });
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadDashboard = () => {
-      setStatus("loading");
-      setAnnouncement("Loading dashboard data...");
-
-      try {
-        if (typeof fetch === "function") {
-          const res = fetch("/api/health");
-          if (res && typeof (res as Promise<unknown>).catch === "function") {
-            (res as Promise<unknown>).catch(() => {
-              if (isMounted) {
-                setStatus("error");
-                setAnnouncement("Failed to load dashboard. Please try again.");
-              }
-            });
-          }
-        }
-        setTimeout(() => {
-          if (isMounted) {
-            setStatus((prev) => (prev === "error" ? "error" : "success"));
-            setAnnouncement((prev) =>
-              prev === "Failed to load dashboard. Please try again."
-                ? prev
-                : "Dashboard loaded successfully.",
-            );
-          }
-        }, 500);
-      } catch (err) {
-        if (isMounted) {
-          setStatus("error");
-          setAnnouncement("Failed to load dashboard. Please try again.");
-        }
-      }
-    };
-
-    loadDashboard();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   const activeLines = useMemo(
     () =>
@@ -396,11 +358,11 @@ export function Dashboard() {
     ? `${wallet.publicKey.slice(0, 6)}...${wallet.publicKey.slice(-4)}`
     : "";
 
-  if (status === "success" && !hasLines) {
+  if ((status === "success" && !hasLines) || status === "idle") {
     return (
       <>
         <LiveRegion
-          message={announcement}
+          message={announcement || statusAnnouncement}
           aria-live="polite"
         />
         <div className="dashboard-header">
@@ -470,9 +432,17 @@ export function Dashboard() {
   return (
     <div aria-busy={status === "loading"} className="dashboard-root">
       <LiveRegion
-        message={announcement}
+        message={announcement || statusAnnouncement}
         aria-live={status === "error" ? "assertive" : "polite"}
       />
+      {status === "error" && (
+        <div role="alert" className="dashboard-error-card">
+          <p>{creditError?.message ?? "Unable to load credit data."}</p>
+          <button type="button" onClick={() => void refetchCreditLines().catch(() => undefined)}>
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="dashboard-header">
         <div>
@@ -700,7 +670,7 @@ export function Dashboard() {
           <div className="card" style={animDelay({ animationDelay: "0.1s" })}>
             <h2>
               <span className="icon">📊</span> Credit Summary
-              {status === "success" && (
+              {status === "success" && creditSyncedAt && (
                 <SyncIndicator
                   lastSyncedAt={creditSyncedAt}
                   onRefresh={handleCreditRefresh}
@@ -780,7 +750,7 @@ export function Dashboard() {
           >
             <h2>
               <span className="icon">🛡️</span> Risk Score
-              {status === "success" && (
+              {status === "success" && activitySyncedAt && (
                 <button
                   ref={explainTriggerRef}
                   type="button"
@@ -869,7 +839,7 @@ export function Dashboard() {
             )}
           </div>
 
-          {status === "success" && (
+          {status === "success" && activitySyncedAt && (
             <AttestationCard attestations={MOCK_ATTESTATIONS} />
           )}
 
@@ -1323,7 +1293,7 @@ export function Dashboard() {
           >
             <h2>
               <span className="icon">📝</span> Recent Activity
-              {status === "success" && (
+              {status === "success" && activitySyncedAt && (
                 <SyncIndicator
                   lastSyncedAt={activitySyncedAt}
                   onRefresh={handleActivityRefresh}
