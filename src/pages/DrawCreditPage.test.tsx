@@ -66,7 +66,16 @@ import {
   __getNavigateCalls,
   __clearNavigateCalls,
 } from "react-router-dom";
+import { freezeTime, unfreezeTime } from "@/test/freezeTime";
 import { DRAFT_KEY, saveDraft } from "@/state/wizardDraft";
+
+beforeEach(() => {
+  freezeTime();
+});
+
+afterEach(() => {
+  unfreezeTime();
+});
 
 // ---------------------------------------------------------------------------
 // Mocks

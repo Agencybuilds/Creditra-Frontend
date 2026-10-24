@@ -44,6 +44,7 @@ import { LiveRegion } from "../components/LiveRegion";
 import { useReducedMotion } from "../context/ReducedMotionContext";
 import { HealthTipsPanel } from "../components/HealthTipsPanel";
 import { SyncIndicator } from "@/components/SyncIndicator";
+import { now as clockNow, nowMs as clockNowMs } from "../lib/clock";
 import {
   loadComparisonSelection,
   saveComparisonSelection,
@@ -54,7 +55,7 @@ export { RiskGauge };
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const relativeTime = (iso: string): string => {
-  const diff = Date.now() - new Date(iso).getTime();
+  const diff = clockNowMs() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -842,7 +843,7 @@ export function Dashboard() {
                 }
                 trend="improving"
                 lastUpdated={
-                  riskScoreLines[0]?.updatedAt ?? new Date().toISOString()
+                  riskScoreLines[0]?.updatedAt ?? clockNow().toISOString()
                 }
               />
             )}
