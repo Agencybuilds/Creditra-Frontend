@@ -28,7 +28,7 @@
  *     a meaningful visual fallback rather than a frozen rotation frame.
  */
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useContext } from "react";
 import { Skeleton } from "@/components/Skeleton";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useReducedMotion } from "@/context/ReducedMotionContext";
@@ -68,6 +68,7 @@ import { getDrawAmountValidation } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 import { projectDraw } from "@/lib/draw-projection";
 import { offlineMutation } from "@/utils/offline";
+import { NotificationContext } from "@/context/NotificationContext";
 import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
@@ -108,6 +109,19 @@ function isFocusedOnInput(): boolean {
 
 export default function DrawCreditPage() {
   const navigate = useNavigate();
+  // Read the context directly (not `useNotifications()`) so this
+  // component renders in isolation tests without a provider.
+  // In production, App.tsx always wraps this in <NotificationProvider>,
+  // so `addToast` is defined and the toast fires.
+  const notifCtx = useContext(NotificationContext);
+  const addToast = notifCtx?.addToast;
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const isLearnMode = searchParams.get("learn") === "1";
@@ -119,7 +133,7 @@ export default function DrawCreditPage() {
     () =>
       readJson<boolean>(DEFAULT_RISK_ACK_KEY, false) ||
       readJson<boolean>(GRANTFOX_RISK_EDUCATION_ACK_KEY, false) ||
-      readJson<boolean>(DEFAULT_RISK_BANNER_DISMISSED_KEY, false)
+      readJson<boolean>(DEFAULT_RISK_BANNER_DISMISSED_KEY, false),
   );
   const [isRiskModalOpen, setIsRiskModalOpen] = useState(() => isLearnMode);
   const riskBannerTriggerRef = useRef<HTMLButtonElement>(null);
@@ -408,6 +422,28 @@ export default function DrawCreditPage() {
             timestamp: new Date(),
           };
 
+          // Issue #1180: if the user left the page during processing,
+          // do not mutate unmounted React state and do not hijack
+          // navigation. Surface the result as a toast instead.
+          if (!isMountedRef.current) {
+            addToast?.({
+              type: succeeded ? "success" : "error",
+              category: "transaction",
+              title: succeeded
+                ? `Your $${amount} draw succeeded`
+                : `Your $${amount} draw failed`,
+              message: succeeded
+                ? "View the details in your transaction history."
+                : "Insufficient funds available.",
+              action: {
+                label: "View transactions",
+                onClick: () => navigate("/transactions"),
+              },
+              saveToHistory: true,
+            });
+            return;
+          }
+
           setTransaction(newTransaction);
           setErrorKind(succeeded ? undefined : classifyDrawError(newTransaction));
           setIsLoading(false);
@@ -423,7 +459,7 @@ export default function DrawCreditPage() {
         onOffline: () => {
           queueAction(() => {
             void handleConfirm();
-          }, 'draw-confirm');
+          }, "draw-confirm");
         },
         offlineMessage:
           "You are offline, so your draw cannot be processed yet. It has been queued and will be submitted when your connection is restored.",
@@ -486,6 +522,17 @@ export default function DrawCreditPage() {
   const handleCancel = useCallback(() => {
     navigate("/");
   }, [navigate]);
+
+  // Issue #1180: warn on tab close while a submission is in flight.
+  useEffect(() => {
+    if (!isLoading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isLoading]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -774,6 +821,14 @@ export default function DrawCreditPage() {
                     <p className="dc-step__subtitle">
                       Your draw request is being processed.
                     </p>
+                    <p
+                      className="dc-step__subtitle"
+                      data-testid="draw-status-hint"
+                      style={{ marginTop: "0.25rem", fontSize: "0.8125rem" }}
+                    >
+                      You can leave this page; we&apos;ll notify you when it
+                      completes.
+                    </p>
                   </div>
                 </div>
               )}
@@ -866,7 +921,11 @@ export function DrawCreditPageSkeleton() {
                   <div className="dc-credit-line-item">
                     <div className="dc-credit-line-item__inner w-full">
                       <div className="dc-credit-line-item__body w-full">
-                        <Skeleton width="120px" height="24px" className="mb-3" />
+                        <Skeleton
+                          width="120px"
+                          height="24px"
+                          className="mb-3"
+                        />
                         <div className="flex gap-6 mb-3">
                           <div className="space-y-1">
                             <Skeleton width="60px" height="14px" />
