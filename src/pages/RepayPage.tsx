@@ -19,11 +19,9 @@ import {
 } from '@/utils/amountValidation';
 import { useOnline } from '@/hooks/useOnline';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
-import {
-  computeMonthlyAccruedInterest,
-  roundToCents,
-} from '@/utils/currency';
+import { roundToCents } from '@/utils/currency';
 import { allocateRepayment } from '@/lib/repay-allocation';
+import { getAccruedInterest, getAccruedInterestDays } from '@/lib/interest';
 import {
   isTypedAmountMatch,
   TypedAmountConfirmField,
@@ -211,11 +209,14 @@ export default function RepayPage() {
   const [reviewBalance, setReviewBalance] = useState<number | null>(null);
   const [reviewBalanceError, setReviewBalanceError] = useState('');
 
+  // Interest accrues by actual elapsed days since the last accrual
+  // (ACT/365), falling back to a monthly estimate when no date is known.
   const accruedInterest = useMemo(
-    () =>
-      selectedLine
-        ? computeMonthlyAccruedInterest(selectedLine.utilized, selectedLine.apr)
-        : 0,
+    () => (selectedLine ? getAccruedInterest(selectedLine, new Date()) : 0),
+    [selectedLine],
+  );
+  const accruedDays = useMemo(
+    () => (selectedLine ? getAccruedInterestDays(selectedLine, new Date()) : null),
     [selectedLine],
   );
 
@@ -436,7 +437,7 @@ export default function RepayPage() {
       getRepayAmountValidation(
         recoveredDraft.amountStr,
         roundToCents(
-          draftLine.utilized + computeMonthlyAccruedInterest(draftLine.utilized, draftLine.apr),
+          draftLine.utilized + getAccruedInterest(draftLine, new Date()),
         ),
         walletBalance,
       ).isValid;
@@ -1297,7 +1298,7 @@ export default function RepayPage() {
                 selectedLine.nextPaymentAmount ??
                 Math.max(
                   selectedLine.utilized * 0.025,
-                  selectedLine.utilized * (selectedLine.apr / 100 / 12),
+                  accruedInterest,
                 )
               }
             />
@@ -1440,6 +1441,9 @@ export default function RepayPage() {
                   <span className="num-tabular">
                     {formatMoney(allocation.principalPaid)}
                   </span>
+                </p>
+                <p className="text-xs text-muted">
+                  Accrued interest ({accruedDays ?? 30} days)
                 </p>
               </div>
             </div>
