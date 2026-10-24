@@ -58,6 +58,11 @@ import { LiveRegion } from "@/components/LiveRegion";
 import { CreditLine, DrawStep, Transaction } from "@/types/draw-credit.types";
 import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
+import {
+  DRAW_INELIGIBILITY_REASON_LABELS,
+  getDrawEligibility,
+  type DrawIneligibilityReason,
+} from "@/lib/draw-eligibility";
 import { classifyDrawError, type DrawErrorKind } from "@/lib/draw-errors";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
@@ -207,8 +212,10 @@ export default function DrawCreditPage() {
       };
     }
 
+    // A restored draft may reference a line that has since become Suspended,
+    // Defaulted, Frozen, Closed or fully drawn. Never resume such a draft.
     const normalizedLine = normalizeCreditLineAvailability(line);
-    if (normalizedLine.available <= 0) {
+    if (!getDrawEligibility(normalizedLine).eligible) {
       clearDraft();
       return {
         draft: null,
@@ -301,6 +308,8 @@ export default function DrawCreditPage() {
   const [errorKind, setErrorKind] = useState<DrawErrorKind | undefined>(undefined);
   const [confirmationAcknowledged, setConfirmationAcknowledged] =
     useState(false);
+  const [eligibilityAlert, setEligibilityAlert] =
+    useState<DrawIneligibilityReason | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
 
@@ -321,11 +330,13 @@ export default function DrawCreditPage() {
     setSelectedCreditLine(normalizeCreditLineAvailability(creditLine));
     setAmount(0);
     setConfirmationAcknowledged(false);
+    setEligibilityAlert(null);
     setStep("amount");
   };
 
   const handleAmountNext = (selectedAmount: number) => {
     setAmount(selectedAmount);
+    setEligibilityAlert(null);
     setStep("confirm");
   };
 
@@ -341,6 +352,20 @@ export default function DrawCreditPage() {
     // State-transition invariant: only the confirm step may submit, and it
     // requires a credit line and a positive amount.
     if (step !== "confirm" || !line || amount <= 0) return;
+
+    // Re-check eligibility against the latest line data (status may have
+    // changed while the user was entering an amount). Never submit a draw
+    // against Suspended, Defaulted, Frozen, Closed or fully drawn lines.
+    const latestLine =
+      mockCreditLines.find((candidate) => candidate.id === line.id) ?? line;
+    const latestEligibility = getDrawEligibility(
+      normalizeCreditLineAvailability(latestLine),
+    );
+    if (!latestEligibility.eligible) {
+      setEligibilityAlert(latestEligibility.reason);
+      return;
+    }
+    setEligibilityAlert(null);
 
     // Submit-time validation (defense in depth). The amount step guards user
     // input, but re-validating here ensures an out-of-bounds amount restored
@@ -421,6 +446,7 @@ export default function DrawCreditPage() {
     setSelectedCreditLine(null);
     setAmount(0);
     setConfirmationAcknowledged(false);
+    setEligibilityAlert(null);
     setTransaction(null);
     setErrorKind(undefined);
     setSubmitError(null);
@@ -447,10 +473,12 @@ export default function DrawCreditPage() {
       setStep("select");
       setSelectedCreditLine(null);
       setConfirmationAcknowledged(false);
+      setEligibilityAlert(null);
       setSubmitError(null);
     } else if (step === "confirm") {
       setStep("amount");
       setConfirmationAcknowledged(false);
+      setEligibilityAlert(null);
       setSubmitError(null);
     }
   }, [step]);
@@ -629,6 +657,17 @@ export default function DrawCreditPage() {
 
           {step === "confirm" && selectedCreditLine && (
             <>
+              {eligibilityAlert && (
+                <div
+                  className="dc-eligibility-alert"
+                  role="alert"
+                  aria-live="assertive"
+                >
+                  <strong>This credit line can no longer be drawn from.</strong>{" "}
+                  {DRAW_INELIGIBILITY_REASON_LABELS[eligibilityAlert]}. Please
+                  choose another line before submitting.
+                </div>
+              )}
               {submitError && (
                 <div className="dc-step dc-step--error" role="alert">
                   <p className="dc-step__subtitle">
