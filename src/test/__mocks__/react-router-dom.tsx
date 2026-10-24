@@ -6,12 +6,11 @@
  */
 
 import {
-  Children,
   createElement,
   Fragment,
-  isValidElement,
   useSyncExternalStore,
 } from 'react';
+import { matchPath } from './matchPath';
 
 /*
  * Module-level "current location", set by MemoryRouter when it renders and
@@ -98,6 +97,9 @@ function getLocationSnapshot() {
 }
 
 export function BrowserRouter({ children }: { children: React.ReactNode }) {
+  if (typeof window !== 'undefined' && window.location) {
+    applyEntry(window.location.pathname + (window.location.search || '') + (window.location.hash || ''));
+  }
   return createElement(Fragment, null, children);
 }
 
@@ -184,6 +186,11 @@ export function NavLink({
  * rendered for the first match (falling back to `*`).
  */
 export function Routes({ children }: { children: React.ReactNode }) {
+  useSyncExternalStore(
+    subscribeToLocation,
+    getLocationSnapshot,
+    getLocationSnapshot,
+  );
   const childrenArray = Array.isArray(children) ? children : [children];
   const flattened = childrenArray.flat(Infinity);
   for (const child of flattened) {
@@ -196,43 +203,16 @@ export function Routes({ children }: { children: React.ReactNode }) {
   return null;
 }
 
-export function Route(props: { path?: string; element?: React.ReactNode; [key: string]: unknown }) {
-  return createElement(Fragment, null, props.element);
-  useSyncExternalStore(
-    subscribeToLocation,
-    getLocationSnapshot,
-    getLocationSnapshot,
-  );
-  const current = currentPathname.replace(/\/+$/, '') || '/';
-  let fallback: React.ReactNode = null;
-  let matched: React.ReactNode = null;
-
-  for (const child of Children.toArray(children)) {
-    if (!isValidElement(child)) continue;
-    const props = child.props as { path?: string; element?: React.ReactNode };
-    const path = props.path;
-    if (path === undefined) continue;
-    if (path === '*') {
-      if (fallback === null) fallback = props.element;
-      continue;
-    }
-    const normalized = path.replace(/\/+$/, '') || '/';
-    if (normalized === current) {
-      matched = props.element;
-      break;
-    }
+export function Route(props: {
+  path?: string;
+  element?: React.ReactNode;
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}) {
+  if (props.element !== undefined && props.element !== null) {
+    return createElement(Fragment, null, props.element);
   }
-
-  const element = matched ?? fallback;
-  return element !== null && element !== undefined
-    ? createElement(Fragment, null, element)
-    : null;
-}
-
-/** Rendered only when `Routes` selects a Route that inlines children. */
-export function Route({ element, children }: Record<string, unknown>) {
-  if (element !== undefined && element !== null) return null;
-  return createElement(Fragment, null, children as React.ReactNode);
+  return createElement(Fragment, null, props.children as React.ReactNode);
 }
 
 export function Navigate(_props: Record<string, unknown>) {
@@ -323,5 +303,5 @@ export function useParams() {
   return {};
 }
 
-export { matchPath } from './matchPath';
+export { matchPath };
 
