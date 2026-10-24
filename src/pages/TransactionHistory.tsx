@@ -18,7 +18,12 @@ import {
   type AmountRangePreset,
 } from "../components/AmountRangeChips";
 import { useDebounceValue } from "../hooks/useDebounceValue";
-import { toCsv, downloadCsv } from "../utils/csv";
+import { downloadCsv } from "../utils/csv";
+import {
+  buildTransactionCsv,
+  buildTransactionCsvFilename,
+  DEFAULT_TRANSACTION_CSV_ASSET,
+} from "../lib/transaction-csv";
 import { useNotifications } from "../context/NotificationContext";
 import { useCreditLines, useCreditTransactions } from "../hooks/useCreditLines";
 import {
@@ -190,50 +195,6 @@ const getDateGroup = (iso: string): string => {
   // for future-dated and unparseable rows.
   return getCalendarGroup(iso, new Date());
 };
-
-function getExportFilename(transactions: TransactionWithLine[]): string {
-  const validDates = transactions
-    .map((tx) => new Date(tx.date))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const formatDateForFilename = (date: Date) => date.toISOString().slice(0, 10);
-  const start = validDates[0] ? formatDateForFilename(validDates[0]) : "all";
-  const end = validDates[validDates.length - 1]
-    ? formatDateForFilename(validDates[validDates.length - 1])
-    : "all";
-
-  return `creditra-transactions-${start}-${end}.csv`;
-}
-
-function buildTransactionCsv(transactions: TransactionWithLine[]): string {
-  const headers = [
-    "Date",
-    "Type",
-    "Amount",
-    "Credit Line",
-    "Credit Line ID",
-    "Status",
-    "Note",
-    "Transaction Hash",
-  ] as const;
-
-  const rows = transactions.map(
-    (tx) =>
-      [
-        fmtDateTime(tx.date),
-        TX_TYPE_LABELS[tx.type],
-        tx.amount,
-        tx.lineName,
-        tx.lineId,
-        tx.status,
-        tx.note ?? "",
-        tx.txHash ?? "",
-      ] as const,
-  );
-
-  return toCsv(headers, rows);
-}
 
 function TransactionRow({
   tx,
@@ -752,8 +713,10 @@ export function TransactionHistory() {
   const handleExportCsv = () => {
     if (exportDisabled) return;
 
-    const csv = buildTransactionCsv(filteredTransactions);
-    const filename = getExportFilename(filteredTransactions);
+    const csv = buildTransactionCsv(filteredTransactions, {
+      asset: DEFAULT_TRANSACTION_CSV_ASSET,
+    });
+    const filename = buildTransactionCsvFilename(filteredTransactions);
 
     downloadCsv(filename, csv);
 
