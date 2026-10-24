@@ -89,6 +89,13 @@ beforeEach(() => {
   walletState.current = null;
 });
 
+// ConfirmationStep derives a wallet identity for transaction bookkeeping, but
+// these tests render the wizard without WalletProvider. Provide a stable
+// identity so the confirm step can mount (#1173).
+vi.mock("@/hooks/useWalletIdentityKey", () => ({
+  useWalletIdentityKey: () => "test-wallet-identity",
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -815,8 +822,9 @@ describe("DrawCreditPage — duplicate submission guard", () => {
     vi.useRealTimers();
 
     // The in-flight flag was released in `finally`, so the wizard can reset.
+    // Since #1179 a failed draw labels its reset CTA "Start over".
     await user.click(
-      screen.getByRole("button", { name: /make another draw/i }),
+      screen.getByRole("button", { name: /start over/i }),
     );
 
     expect(
