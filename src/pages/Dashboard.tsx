@@ -21,7 +21,7 @@ import { ContinuePrompt } from "../components/ContinuePrompt";
 import { MOCK_ATTESTATIONS } from "../data/mockData";
 import { getPaymentDueState } from "../lib/payment-due";
 import { useCreditLines, useCreditTransactions } from "@/hooks/useCreditLines";
-import { summarizeCreditLines } from "@/lib/credit-summary";
+import { getBorrowerRiskScore, summarizeCreditLines } from "@/lib/credit-summary";
 import type { Transaction } from "../types/creditLine";
 import {
   COLOR,
@@ -201,6 +201,16 @@ export function Dashboard() {
     [creditLines],
   );
 
+  const riskScoreLines = useMemo(
+    () => creditLines.filter((cl) => cl.status !== "Closed"),
+    [creditLines],
+  );
+
+  const borrowerRiskScore = useMemo(
+    () => getBorrowerRiskScore(creditLines),
+    [creditLines],
+  );
+
   const creditSummary = useMemo(() => summarizeCreditLines(creditLines), [creditLines]);
   const totalLimit = creditSummary.drawableLimit;
   const totalUtilized = creditSummary.totalOutstanding;
@@ -209,14 +219,6 @@ export function Dashboard() {
   const overallPct = utilizationPct(totalActiveUtilized, totalLimit || 1);
   const overallLevel =
     totalLimit > 0 ? getUtilizationLevel(totalActiveUtilized, totalLimit) : "low";
-
-  const avgRiskScore =
-    activeLinesOnly.length > 0
-      ? Math.round(
-          activeLinesOnly.reduce((s, cl) => s + cl.riskScore, 0) /
-            activeLinesOnly.length,
-        )
-      : 0;
 
   const recentActivity = useMemo(() => {
     const all: (Transaction & { lineName: string; lineId: string })[] = [];
@@ -830,10 +832,17 @@ export function Dashboard() {
               </div>
             ) : (
               <RiskGauge
-                score={avgRiskScore}
+                score={borrowerRiskScore.score}
+                caption={
+                  borrowerRiskScore.basis === "limit_weighted"
+                    ? `Weighted across ${riskScoreLines.length} lines`
+                    : borrowerRiskScore.basis === "borrower"
+                      ? "Borrower-level score"
+                      : undefined
+                }
                 trend="improving"
                 lastUpdated={
-                  activeLinesOnly[0]?.updatedAt ?? new Date().toISOString()
+                  riskScoreLines[0]?.updatedAt ?? new Date().toISOString()
                 }
               />
             )}
